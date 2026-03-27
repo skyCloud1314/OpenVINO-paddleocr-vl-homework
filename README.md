@@ -1,20 +1,32 @@
-# PaddleOCR-VL-1.5 with OpenVINO™
+#  OpenVINO + PaddleOCR-VL 文档理解打卡任务
 
-<p align="center" width="100%">
-    <img width="90%" src="https://raw.githubusercontent.com/cuicheng01/PaddleX_doc_images/refs/heads/main/images/paddleocr_vl_1_5/PaddleOCR-VL-1.5.png">
-</p>
+> 飞桨黑客松第十期 · OpenVINO 赛道热身打卡  
+> 成功运行 [PaddleOCR-VL Notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/paddleocr_vl) 并完成端到端推理验证 ✅
 
-This notebook shows an end-to-end workflow for **PaddleOCR-VL-1.5 → OpenVINO**:
+---
 
-- Download the pretrained PaddleOCR-VL-1.5/PaddleOCR-VL model.
-- Patch `modeling_paddleocr_vl.py` locally (for `trust_remote_code`).
-- Convert/export the model to OpenVINO IR (optionally with INT4/INT8 weight compression).
-- Validate the OpenVINO inference pipeline on an input image.
+## 📌 任务目标
 
-## Installation Instructions
+本仓库用于记录我在 **飞桨黑客松第十期 OpenVINO 赛道** 中完成的热身打卡任务。通过本次实践，我掌握了：
 
-This is a self-contained example that relies on the code in this folder.
-We recommend running the notebook in a virtual environment. You only need a Jupyter server to start.
-For details, please refer to [Installation Guide](../../README.md).
+- 如何在 Intel 平台上部署并运行 OpenVINO 官方提供的 PaddleOCR-VL Notebook；
+- 理解模型下载 → OpenVINO 转换 → 压缩优化 → 推理执行的完整流程；
+- 验证多模态文档理解（OCR）结果的准确性与性能表现。
 
-<img referrerpolicy="no-referrer-when-downgrade" src="https://static.scarf.sh/a.png?x-pxid=5b5a4db0-7875-4bfb-bdbd-01698b5b1a77&file=notebooks/paddleocr_vl/README.md" />
+
+
+## 🔧 环境信息
+
+| 项目 | 配置 |
+|------|------|
+| 操作系统 | Ubuntu 20.04.6 LTS (Focal Fossa) |
+| CPU | Intel(R) Xeon(R) Platinum 8350C CPU @ 2.60GHz |
+| OpenVINO 版本 | `2026.0.0-20965-c6d6a13a886-releases/2026/0` |
+| Python 版本 | 3.10.10 |
+| 运行平台 | 百度飞桨 AI Studio |
+
+
+本仓库包含三个核心文件：
+- environment.ipynb:配置初始环境
+- paddleocr_vl.ipynb：基于 OpenVINO 的 PaddleOCR-VL 文档理解 Notebook，展示模型加载、转换与推理全过程。
+- app_gradio.py：使用 Gradio 构建的轻量 Web 应用，支持上传图片并实时返回 OCR 识别结果。
