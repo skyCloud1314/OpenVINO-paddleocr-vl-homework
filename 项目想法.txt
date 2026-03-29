@@ -1,0 +1,189 @@
+【PaddlePaddle Hackathon 10 方案说明】PaperMind - 基于 OpenVINO 的科研论文智能研读助手
+
+
+一、项目名称
+
+PaperMind - 基于 OpenVINO 与 PaddleOCR-VL 的科研论文智能研读助手
+
+
+二、一句话概述
+
+用户上传学术 PDF，系统通过 OpenVINO 加速的 PaddleOCR-VL 将每页论文转化为高保真结构化 Markdown（含 LaTeX 公式、表格、图注），并对接下游 LLM 实现论文摘要、公式解读、表格分析、跨章节智能问答四大核心功能，全流程本地运行，保护科研隐私。
+
+
+三、解决的核心问题
+
+科研人员平均每周需阅读 5-15 篇论文，但现有工具在处理学术 PDF 时面临五大痛点：
+
+  1) 公式乱码：传统 OCR（如 Tesseract、PyMuPDF）无法识别行内/行间数学公式，导致 LLM 无法理解核心算法推导。
+  2) 排版错位：双栏 PDF 被逐行提取时左右两栏文本交错，生成的摘要逻辑混乱、不可用。
+  3) 表格语义丢失：复杂表格（合并单元格、跨页表格）被提取为纯文本，无法进行数据对比和趋势分析。
+  4) 图文断裂：图片标题（Caption）与正文失去关联，LLM 无法引用图表进行推理。
+  5) 隐私风险：使用云端 API 处理未发表论文，科研成果存在泄露风险。
+
+PaddleOCR-VL 作为多模态视觉语言模型，不仅"看到"文字，更"理解"文档布局，能直接从像素级输入生成带结构标记的文本，天然解决以上问题。通过 OpenVINO 的 NNCF 量化和 Stateful 模型优化，可在个人 PC（Intel 酷睿 Ultra）上高效运行。
+
+
+四、与现有项目的差异化
+
+本方案与 openvino_notebooks 中的 paddleocr_vl Notebook 以及 openvino_build_deploy/demos 下的所有现有 Demo 完全不重复：
+
+  - 现有 paddleocr_vl Notebook：定位于模型转换与单图推理演示，输入为单张图片，输出为原始 OCR 文本，无下游任务。
+  - 现有 demos（Virtual AI Assistant 等）：定位于通用对话/图像描述/物体检测，未涉及学术文档解析。
+  - PaperMind（本方案）：定位于学术论文全流程深度解析，输入为多页 PDF 文档，输出为结构化 Markdown + LaTeX + 智能问答，包含多栏排版重排、公式区域识别、表格结构化等专用后处理逻辑，并对接下游 LLM Agent 完成摘要/公式解读/表格分析/跨章节 Q&A 等任务。
+
+
+五、主要功能
+
+  1) 高保真论文解析
+     - 数学公式自动转化为标准 LaTeX 格式（行内 $...$ / 行间 $$...$$）
+     - 复杂表格转化为 Markdown 表格，保留合并单元格语义
+     - 图片标题（Caption）与正文保持关联
+     - 双栏/三栏排版智能分栏，按正确阅读顺序提取
+
+  2) 论文摘要生成
+     - 基于完整 Markdown 文档，自动生成结构化摘要
+     - 包含研究目标、方法、实验结果、结论四个维度
+
+  3) 公式解读
+     - 选中任意公式，LLM 逐步解释每个符号的含义和推导过程
+     - 关联上下文，说明公式在论文中的作用
+
+  4) 表格数据分析
+     - 将 Markdown 表格转为结构化数据
+     - LLM 进行趋势对比分析，生成数据洞察
+
+  5) 智能问答（RAG）
+     - 基于 FAISS 本地向量库实现检索增强生成
+     - 用户可以自然语言提问论文中的任意内容
+
+
+六、技术路线
+
+  核心流程：PDF 上传 -> 逐页渲染为图片 -> PaddleOCR-VL (OpenVINO) 推理 -> 结构化后处理 -> 下游 LLM Agent -> Gradio 展示
+
+  (1) PDF 预处理
+      使用 PyMuPDF 将 PDF 逐页渲染为 300 DPI 高分辨率图片，自动裁剪页眉页脚，基于空白区域分析进行分栏检测。
+
+  (2) PaddleOCR-VL OpenVINO 推理
+      基于已有的 ov_paddleocr_vl.py 中的 OVPaddleOCRVLForCausalLM 类进行封装。针对每页图片构造专用 Prompt，指引模型输出带 LaTeX 公式和 Markdown 表格的结构化文本。利用 Stateful 模型技术缓存 KV-Cache，提升长文本生成吞吐。
+
+  (3) 结构化后处理
+      LaTeX 校验（修复未闭合花括号等常见错误）、表格格式规范化、多页结果按章节编号合并为完整文档。
+
+  (4) 下游 LLM Agent
+      集成 Qwen2.5-7B-Instruct（同样通过 OpenVINO 推理），通过 LangChain 编排摘要生成、公式解读、表格分析、RAG 问答四条功能链路。
+
+
+七、OpenVINO 优化策略
+
+  (1) 模型量化
+      - Vision Encoder：NNCF INT8 Post-Training Quantization（smooth_quant_alpha=0.6），推理速度提升约 2 倍
+      - LLM Decoder：NNCF INT4 Asymmetric Weight Compression（group_size=64, ratio=0.9），内存降低约 4 倍
+      - Vision MLP / LLM Embedding：FP16 推理，内存减半
+
+  (2) Stateful 模型
+      将 KV-Cache 内化为模型内部状态变量，避免每次推理重复传递巨大的 past_key_values 张量，在逐页生成场景下显著降低内存带宽压力。
+
+  (3) 设备调度
+      - CPU：LLM Decoder (INT4)，利用 AVX-512/AMX 加速矩阵运算
+      - iGPU：Vision Encoder (INT8)，利用 GPU 并行加速图像特征提取
+      - NPU：备选方案，进一步降低功耗
+      用户可通过界面自由选择设备组合。
+
+
+八、性能目标
+
+  - 单页解析延迟：< 5 秒 (CPU) / < 3 秒 (iGPU)
+  - LLM 生成吞吐：> 15 tokens/s (INT4)
+  - 内存峰值：< 12 GB（处理 20 页论文时）
+  - 公式识别准确率：> 85%（50 个公式人工评估）
+  - 量化前后对比：延迟降低 > 50%，精度损失 < 3%
+
+
+九、技术栈
+
+  - 核心模型：PaddleOCR-VL（飞桨多模态视觉语言模型）
+  - 推理引擎：OpenVINO 2026.0
+  - 模型量化：NNCF（INT4 / INT8）
+  - PDF 处理：PyMuPDF (fitz)
+  - 向量数据库：FAISS（本地轻量级向量检索）
+  - 下游 LLM：Qwen2.5-7B-Instruct (OpenVINO)
+  - Web 框架：Gradio
+  - 编排框架：LangChain
+  - 目标平台：Intel 酷睿 Ultra 处理器（CPU + iGPU + NPU）
+
+
+十、实施计划
+
+  第 1 周：模型优化与基准测试
+    - 完成 PaddleOCR-VL 到 OpenVINO 的转换
+    - 实现 Vision INT8 + LLM INT4 量化
+    - 在酷睿 Ultra 平台完成延迟/吞吐基准测试
+    - 输出量化前后对比报告
+
+  第 2 周：核心解析 Pipeline
+    - 开发 PDF 预处理器（逐页渲染 + 分栏检测）
+    - 设计并调优论文解析 Prompt
+    - 开发结构化后处理器（LaTeX 校验 + 表格规范化）
+    - 实现多页 Markdown 合并逻辑
+
+  第 3 周：下游 Agent 集成
+    - 集成 Qwen2.5 (OpenVINO) 作为下游 LLM
+    - 实现四大核心功能（摘要/公式解读/表格分析/问答）
+    - 构建 FAISS 本地向量库用于 RAG 检索
+    - Agent Prompt 调优
+
+  第 4 周：Demo 整合与效果展示
+    - 开发 Gradio 完整 UI（双栏布局 + Agent 面板 + 性能监控）
+    - 制作效果展示截图/录屏
+    - 撰写 README（一键运行命令 + 环境说明 + 模型获取）
+    - 提交 PR 至 openvino_build_deploy/demos
+
+
+十一、预期交付物
+
+  (1) 代码：完整的 Demo 代码，符合 openvino_build_deploy 贡献规范
+      paper_mind_demo/
+        main.py               -- 主入口，Gradio 启动
+        ov_inference.py        -- PaddleOCR-VL OpenVINO 推理封装
+        pdf_preprocessor.py    -- PDF 预处理（渲染 + 分栏）
+        post_processor.py      -- 结构化后处理（LaTeX / 表格）
+        paper_agent.py         -- 下游 LLM Agent（摘要 / 问答）
+        requirements.txt       -- 依赖列表
+        README.md              -- 使用说明 + 一键运行
+        assets/                -- 效果截图 + 示例论文
+
+  (2) 效果展示：解析对比截图、公式识别渲染对比、智能问答录屏、量化性能对比图表
+  (3) 文档：包含完整环境说明、模型获取方式、一键运行命令的 README
+
+
+十二、加分项
+
+  - 多设备切换：Gradio 下拉菜单选择 CPU / iGPU / NPU，自动重载模型
+  - 性能对比：内置 Benchmark 面板，实时展示 FP32 / INT8 / INT4 延迟对比
+  - OpenVINO Model Server（可选）：提供 OVMS Docker 部署脚本，支持 gRPC 远程推理
+  - 批量处理：支持一次上传多篇论文，自动排队解析
+
+
+十三、可行性说明
+
+  技术可行性：
+    - ov_paddleocr_vl.py 的模型转换和 NNCF 量化流程已在热身任务中完整跑通
+    - PaddleOCR-VL 的 chat() 接口支持自定义 Prompt，可直接用于结构化输出
+    - OpenVINO Stateful 模型在长序列生成任务中性能稳定
+
+  资源可行性：
+    - 目标平台（Intel 酷睿 Ultra 迷你电脑）由赛方提供
+    - 所有模型和依赖均为开源，可免费获取
+    - 无需 GPU 服务器，纯 CPU/iGPU 即可运行
+
+  时间可行性：
+    - 四周开发周期，每周有明确的里程碑和交付物
+    - 核心推理代码已在热身任务中完成约 80%，剩余工作集中在后处理和 Agent 集成
+
+
+参考资源：
+  - PaddleOCR-VL OpenVINO Notebook: https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/paddleocr_vl
+  - OpenVINO Build & Deploy Demos: https://github.com/openvinotoolkit/openvino_build_deploy/demos
+  - NNCF 量化文档: https://docs.openvino.ai/2024/openvino-workflow/model-optimization.html
